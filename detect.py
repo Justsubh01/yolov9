@@ -3,9 +3,10 @@ import os
 import platform
 import sys
 from pathlib import Path
-
+from datetime import datetime, timezone
+import time
 import torch
-
+import requests
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLO root directory
 if str(ROOT) not in sys.path:
@@ -19,6 +20,8 @@ from utils.general import (LOGGER, Profile, check_file, check_img_size, check_im
 from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import select_device, smart_inference_mode
 
+url = "https://stg-challan-api.beltech.ai/incident"
+cookies = {"JSESSIONID": "589AF8AF2F86FB50CEAD4150F5712814"}
 
 @smart_inference_mode()
 def run(
@@ -58,7 +61,7 @@ def run(
     screenshot = source.lower().startswith('screen')
     if is_url and is_file:
         source = check_file(source)  # download
-
+    pre_time = time.time()
     # Directories
     save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
     (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
@@ -95,7 +98,11 @@ def run(
         # Inference
         with dt[1]:
             visualize = increment_path(save_dir / Path(path).stem, mkdir=True) if visualize else False
-            pred = model(im, augment=augment, visualize=visualize)
+            pred = model(im, augment=augment, visualize=False)
+            print(f"Type of pred before NMS: {type(pred)}")
+            if isinstance(pred, list):
+                pred = pred[0]  # Extract first tensor
+
 
         # NMS
         with dt[2]:
@@ -146,7 +153,36 @@ def run(
 
             # Stream results
             im0 = annotator.result()
+            now = datetime.now(timezone.utc)
 
+            # Format it as required
+            formatted_time = now.strftime('%Y-%m-%dT%H:%M:%S.000+00:00')
+
+            cur_time = time.time()
+       
+            if (cur_time-pre_time) > 10:
+
+                cv2.imwrite("fire_evidence/fire_evidence.jpg",im0)
+                # cv2.imwrite(folder_path + "/" + str(datetime.datetime.now())+"_"+ str(em)+"_.jpg", frame)
+                payload={'name': 'Fire Detected',
+                'description': 'Fire detected near Durga temple',
+                'incidentLongitude': '80.6059257',
+                'incidentLatitude': '16.5151885',
+                'locationName': 'Temple Ghat Road',
+                'culpritName': "",
+                'gender': 'Male',
+                'ageInYears': '26',
+                'incidentTime': formatted_time,
+                'culpritImage': ""}
+
+                files=[
+                ('primaryImage',('2025-02-05 17:11:39.764445_1546_.jpg',open("fire_evidence/fire_evidence.jpg",'rb'),'application/octet-stream'))
+                ]
+                headers = {}
+
+                response = requests.request("POST", url, headers=headers, data=payload, files=files)
+                print(response)
+                pre_time = cur_time
             # Save results (image with detections)
             if save_img:
                 if dataset.mode == 'image':
